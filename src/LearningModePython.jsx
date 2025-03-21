@@ -15,15 +15,10 @@ const ModeSelection = ({ onModeSelect }) => {
             className="bg-blue-600 hover:bg-blue-700 transition-colors p-8 rounded-lg text-left group"
           >
             <div className="flex items-center mb-4">
-              <Rocket className="w-8 h-8 text-white mr-4 group-hover:translate-x-1 transition-transform" />
               <h2 className="text-2xl font-semibold text-white">
-                Standard Mode
+                Mode 1
               </h2>
             </div>
-            <p className="text-blue-200">
-              Progress through questions of increasing difficulty, from easy to
-              hard. Perfect for a structured learning experience.
-            </p>
           </button>
 
           <button
@@ -31,15 +26,10 @@ const ModeSelection = ({ onModeSelect }) => {
             className="bg-purple-600 hover:bg-purple-700 transition-colors p-8 rounded-lg text-left group"
           >
             <div className="flex items-center mb-4">
-              <Brain className="w-8 h-8 text-white mr-4 group-hover:translate-x-1 transition-transform" />
               <h2 className="text-2xl font-semibold text-white">
-                Learning Mode
+                Mode 2
               </h2>
             </div>
-            <p className="text-purple-200">
-              Adaptive learning that adjusts to your skill level and tracks your
-              progress. Questions are selected based on your performance.
-            </p>
           </button>
         </div>
       </div>
@@ -212,28 +202,45 @@ const selectQuestions = (mode, profile, allQuestions) => {
 // Standard mode question selection (preserved from original)
 const selectStandardQuestions = (allQuestions) => {
   if (!allQuestions) {
-    console.error("No questions provided for standard mode");
+    console.error("No questions provided");
     return null;
   }
 
-  const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
   try {
-    const selected = DIFFICULTY_ORDER.map((difficulty) => {
-      const difficultyQuestions = Object.entries(allQuestions)
-        .filter(([_, q]) => q.difficulty === difficulty)
-        .map(([id, q]) => ({ id: parseInt(id), ...q }));
+    // Convert the questions object to an array
+    const questionsArray = Object.entries(allQuestions)
+      .map(([id, q]) => ({ id: parseInt(id), ...q }));
 
-      if (difficultyQuestions.length === 0) {
-        throw new Error(`No questions found for difficulty: ${difficulty}`);
-      }
+    // Check if we have any questions
+    if (questionsArray.length === 0) {
+      throw new Error("No questions found");
+    }
 
-      const randomIndex = Math.floor(
-        Math.random() * difficultyQuestions.length,
+    // Check if we have at least 3 questions
+    if (questionsArray.length < 3) {
+      throw new Error(
+        `Not enough questions: only ${questionsArray.length} available`,
       );
-      return difficultyQuestions[randomIndex];
-    });
+    }
+
+    // Select 3 random questions
+    const selected = [];
+    const questionCount = 3;
+
+    // Create a copy of the array to avoid modifying the original
+    const availableQuestions = [...questionsArray];
+
+    for (let i = 0; i < questionCount; i++) {
+      const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+      selected.push(availableQuestions[randomIndex]);
+
+      // Remove the selected question to avoid duplicates
+      availableQuestions.splice(randomIndex, 1);
+    }
+
     return selected;
   } catch (error) {
+    console.error(error.message);
     return null;
   }
 };

@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 
 import PythonCodeEditor from "./PythonCodeEditor";
 
+// StarBackground component remains the same
 const StarBackground = React.memo(() => {
   const stars = useMemo(() => {
     return Array.from({ length: 50 }).map((_, i) => ({
@@ -59,8 +60,16 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+
 const PythonQuestionRenderer = (
-  { question, onMissionComplete, progressInfo },
+  {
+    question,
+    onMissionComplete,
+    onTestAttempt,
+    onSkip,
+    progressInfo,
+    onCodeChange,
+  },
 ) => {
   // All hooks must be at the top level
   const [pyodide, setPyodide] = useState(null);
@@ -70,6 +79,9 @@ const PythonQuestionRenderer = (
   const [error, setError] = useState(null);
   const [testResults, setTestResults] = useState([]);
   const [allTestsPassed, setAllTestsPassed] = useState(null);
+
+  // Maintain a reference to the initial code to avoid unnecessary updates
+  const initialCodeRef = useRef(question.code);
 
   // Define callbacks before useEffect
   const runTests = useCallback(async () => {
@@ -143,19 +155,37 @@ str(result)`.trim();
 
       setTestResults(results);
       setAllTestsPassed(allPassed);
+
+      if (onTestAttempt) {
+        onTestAttempt(allPassed);
+      }
     } catch (err) {
       setError(err.message);
       setAllTestsPassed(false);
-    }
-  }, [pyodide, code, question]);
 
-  // Initialize code when question changes
+      if (onTestAttempt) {
+        onTestAttempt(false);
+      }
+    }
+  }, [pyodide, code, question, onTestAttempt]);
+
+  // Initialize code only when the question ID changes, not on every render
   useEffect(() => {
-    console.log("Question changed, new question:", question);
-    console.log("Current code state:", code);
-    setCode(question.code);
-    console.log("Code updated to:", question.code);
-  }, [question]);
+    // Only update the code state if the question ID has changed
+    if (initialCodeRef.current !== question.code) {
+      console.log("Question code changed, updating editor");
+      setCode(question.code);
+      initialCodeRef.current = question.code;
+    }
+  }, [question.id, question.code]);
+
+  // Handle code changes, propagating to parent component
+  const handleCodeChange = (newCode) => {
+    setCode(newCode);
+    if (onCodeChange) {
+      onCodeChange(newCode);
+    }
+  };
 
   // Load Pyodide
   useEffect(() => {
@@ -331,14 +361,15 @@ str(result)`.trim();
             </h2>
 
             <PythonCodeEditor
-              initialCode={question.code}
-              onCodeChange={setCode}
+              initialCode={code}
+              onCodeChange={handleCodeChange}
               className="mb-6"
             />
 
             <div className="flex justify-end space-x-4">
               <button
-                onClick={() => onMissionComplete(false, true)}
+                onClick={() =>
+                  onSkip ? onSkip() : onMissionComplete(false, true)}
                 className="text-slate-400 underline hover:text-slate-300 transition-colors flex items-center space-x-2"
               >
                 <span>Skip this question</span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   getUserProfile,
   ModeSelection,
@@ -8,10 +8,23 @@ import {
 } from "./LearningModePython";
 import PythonQuestion from "./PythonQuestion";
 import PythonQuestionRenderer from "./PythonQuestionRenderer";
-import { RefreshCw, Rocket, Star, Trophy, XCircle } from "lucide-react";
+import {
+  BarChart2,
+  RefreshCw,
+  Rocket,
+  Star,
+  Trophy,
+  XCircle,
+} from "lucide-react";
+import {
+  MetricsExportButton,
+  MetricsProvider,
+  useMetrics,
+} from "./MetricsTracker";
 
 const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
 
+// Helper function to initialize questions
 const initializeQuestions = (mode, userProfile = null) => {
   try {
     // Get all questions
@@ -41,7 +54,7 @@ const initializeQuestions = (mode, userProfile = null) => {
   }
 };
 
-const Python = () => {
+const PythonWithMetrics = () => {
   const [mode, setMode] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [currentMissionIndex, setCurrentMissionIndex] = useState(0);
@@ -51,10 +64,28 @@ const Python = () => {
   const [error, setError] = useState(null);
   const [completedDifficulties, setCompletedDifficulties] = useState([]);
   const [currentAttempts, setCurrentAttempts] = useState(0);
+  const [showMetricsExport, setShowMetricsExport] = useState(false);
 
+  // This will store user code for each question to prevent it from being reset
+  const [userCodeMap, setUserCodeMap] = useState({});
+
+  // Keep track of whether questions have been initialized
+  const questionsInitialized = useRef(false);
+
+  // Get metrics tracking functions
+  const {
+    startMode,
+    completeMode,
+    recordAttempt,
+    recordSkip,
+    recordChallengeCompletion, // Add this line to destructure the function
+  } = useMetrics();
   // Initialize based on selected mode
   useEffect(() => {
     if (!mode) return;
+
+    // Start tracking this mode session
+    startMode(mode.toLowerCase());
 
     let profile = null;
     if (mode === "learning") {
@@ -66,12 +97,41 @@ const Python = () => {
       mode,
       profile,
     );
-    setSelectedQuestions(questions);
-    setAllQuestions(allQuestions);
-    setError(error);
-  }, [mode]);
+
+    // Only set selected questions if this is the first initialization or if there's an error
+    if (!questionsInitialized.current || error) {
+      setSelectedQuestions(questions);
+      setAllQuestions(allQuestions);
+      setError(error);
+      questionsInitialized.current = true;
+
+      // Initialize user code map with initial question code
+      const initialCodeMap = {};
+      questions.forEach((question) => {
+        initialCodeMap[question.id] = question.code;
+      });
+      setUserCodeMap(initialCodeMap);
+    }
+  }, [mode, startMode]);
 
   const handleMissionComplete = (completed = false, skipped = false) => {
+    if (skipped) {
+      recordSkip();
+    }
+
+    // Record challenge completion metrics only for successful completions
+    if (
+      completed && !skipped && currentMissionIndex < selectedQuestions.length
+    ) {
+      const currentQuestion = selectedQuestions[currentMissionIndex];
+      // Use the metrics system to record completion
+      recordChallengeCompletion(
+        currentQuestion.id,
+        currentQuestion.difficulty,
+        currentAttempts,
+      );
+    }
+
     if (mode === "standard") {
       handleStandardModeComplete(completed);
     } else {
@@ -95,6 +155,8 @@ const Python = () => {
         );
       }
       setMissionComplete(true);
+      completeMode(); // Mark the mode as complete in metrics
+      setShowMetricsExport(true); // Show export button when completing missions
     }
   };
 
@@ -141,22 +203,61 @@ const Python = () => {
       }
 
       setMissionComplete(true);
+      completeMode(); // Mark the mode as complete in metrics
+      setShowMetricsExport(true); // Show export button when completing missions
     }
   };
 
   const handleTestAttempt = (success) => {
     setCurrentAttempts((prev) => prev + 1);
-    if (success) {
-      handleMissionComplete(true, false);
-    }
+    recordAttempt(success);
   };
 
   const handleSkip = () => {
     handleMissionComplete(false, true);
   };
 
+  // Handle code changes and update the userCodeMap
+  const handleCodeChange = (questionId, newCode) => {
+    setUserCodeMap((prev) => ({
+      ...prev,
+      [questionId]: newCode,
+    }));
+  };
+
+  // Reset study button handler
+  const handleResetStudy = () => {
+    localStorage.removeItem("pythonLearningProfile");
+    localStorage.removeItem("bitvoyager_session_id");
+    localStorage.removeItem("bitvoyager_metrics");
+    globalThis.location.reload();
+  };
+
+  const handleSuccessfulCompletion = (questionId, difficulty) => {
+    // Record the successful challenge completion in metrics
+    recordChallengeCompletion(
+      questionId,
+      difficulty,
+      currentAttempts,
+    );
+
+    handleMissionComplete(true, false);
+  };
+
   if (!mode) {
-    return <ModeSelection onModeSelect={setMode} />;
+    return (
+      <div>
+        <ModeSelection onModeSelect={setMode} />
+        <div className="fixed bottom-4 right-4 flex space-x-2">
+          <button
+            onClick={handleResetStudy}
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Reset Study
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -195,25 +296,13 @@ const Python = () => {
 
           <h1 className="text-4xl font-bold text-white">Mission Complete!</h1>
 
-          {mode === "standard" && (
-            <div className="flex justify-center space-x-4">
-              {DIFFICULTY_ORDER.map((difficulty) => (
-                <div
-                  key={difficulty}
-                  className={`p-4 rounded-lg border flex flex-col items-center space-y-2 ${
-                    difficulty === "easy"
-                      ? "border-green-500 text-green-400"
-                      : difficulty === "medium"
-                      ? "border-yellow-500 text-yellow-400"
-                      : "border-red-500 text-red-400"
-                  }`}
-                >
-                  {completedDifficulties.includes(difficulty)
-                    ? <Star className="w-6 h-6" fill="currentColor" />
-                    : <Star className="w-6 h-6" />}
-                  <p className="capitalize">{difficulty}</p>
-                </div>
-              ))}
+          {showMetricsExport && (
+            <div className="mt-6">
+              <p className="text-white mb-4">
+                If you are on your third completion, please remember to export
+                your study data before continuing:
+              </p>
+              <MetricsExportButton className="mb-6" />
             </div>
           )}
 
@@ -244,29 +333,69 @@ const Python = () => {
     );
   }
 
+  // Get user's current code for this question or use the default if not yet modified
+  const currentCode = userCodeMap[currentQuestion.id] || currentQuestion.code;
+
   return (
-    <PythonQuestionRenderer
-      key={currentMissionIndex}
-      question={currentQuestion}
-      onMissionComplete={handleMissionComplete}
-      onTestAttempt={handleTestAttempt}
-      progressInfo={{
-        current: currentMissionIndex + 1,
-        total: selectedQuestions.length,
-        difficulty: mode === "standard"
-          ? DIFFICULTY_ORDER[currentMissionIndex]
-          : currentQuestion.difficulty,
-        completedDifficulties,
-        mode,
-        userProfile: mode === "learning" ? userProfile : null,
-        attempts: currentAttempts,
-        isRetry: mode === "learning" &&
-          userProfile?.skippedQuestions?.includes(currentQuestion.id),
-        previouslyFailed: mode === "learning" &&
-          (userProfile?.failedAttempts?.[currentQuestion.id] || 0) > 0,
-      }}
-    />
+    <>
+      <PythonQuestionRenderer
+        key={`question-${currentQuestion.id}-index-${currentMissionIndex}`}
+        question={{ ...currentQuestion, code: currentCode }}
+        onCodeChange={(newCode) =>
+          handleCodeChange(currentQuestion.id, newCode)}
+        onMissionComplete={(completed, skipped = false) => {
+          // Call the test attempt tracking first if this was a successful completion
+          if (completed && !skipped) {
+            handleTestAttempt(true);
+          }
+          handleMissionComplete(completed, skipped);
+        }}
+        onTestAttempt={handleTestAttempt}
+        onSkip={handleSkip}
+        progressInfo={{
+          current: currentMissionIndex + 1,
+          total: selectedQuestions.length,
+          difficulty: mode === "standard"
+            ? DIFFICULTY_ORDER[currentMissionIndex]
+            : currentQuestion.difficulty,
+          completedDifficulties,
+          mode,
+          userProfile: mode === "learning" ? userProfile : null,
+          attempts: currentAttempts,
+          isRetry: mode === "learning" &&
+            userProfile?.skippedQuestions?.includes(currentQuestion.id),
+          previouslyFailed: mode === "learning" &&
+            (userProfile?.failedAttempts?.[currentQuestion.id] || 0) > 0,
+        }}
+      />
+
+      {/* Fixed position metrics button for admin/testing */}
+      <div className="fixed bottom-4 right-4">
+        <button
+          onClick={() => setShowMetricsExport((prev) => !prev)}
+          className="p-2 bg-gray-800 text-gray-300 rounded-full hover:bg-gray-700"
+          title="Show metrics options"
+        >
+          <BarChart2 className="w-5 h-5" />
+        </button>
+
+        {showMetricsExport && (
+          <div className="absolute bottom-12 right-0 bg-slate-800 p-4 rounded-lg shadow-lg">
+            <p className="text-white text-sm mb-2">Study Data</p>
+            <MetricsExportButton />
+          </div>
+        )}
+      </div>
+    </>
   );
 };
+
+// Remember to make sure the component is wrapped with MetricsProvider
+// in your component hierarchy
+const Python = () => (
+  <MetricsProvider>
+    <PythonWithMetrics />
+  </MetricsProvider>
+);
 
 export default Python;

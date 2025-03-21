@@ -31,7 +31,10 @@ const PythonCodeEditor = ({
   const highlightTimeoutRef = useRef(null);
   const mountedRef = useRef(false);
 
-  // Prism loading logic remains the same...
+  // Keep track of the initial code to prevent unnecessary re-renders
+  const initialCodeRef = useRef(initialCode);
+
+  // Prism loading logic
   useEffect(() => {
     const loadPrism = async () => {
       try {
@@ -57,7 +60,15 @@ const PythonCodeEditor = ({
     };
   }, []);
 
-  // Highlighting logic remains the same...
+  // Only update code state if initialCode changes and is different from our tracked initialCode
+  useEffect(() => {
+    if (initialCode !== initialCodeRef.current) {
+      setCode(initialCode);
+      initialCodeRef.current = initialCode;
+    }
+  }, [initialCode]);
+
+  // Highlighting logic
   const highlightCode = useCallback((codeToHighlight) => {
     if (
       !mountedRef.current || !prismLoaded || !window.Prism ||
